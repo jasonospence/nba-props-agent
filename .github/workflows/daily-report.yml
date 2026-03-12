@@ -1,0 +1,73 @@
+name: Daily NBA Props Report
+
+on:
+  schedule:
+    # Run at both 15:05 and 16:05 UTC, then gate to 11:00 America/New_York inside the job.
+    # This handles EST/EDT transitions safely.
+    - cron: "5 15,16 * * *"
+  workflow_dispatch:
+
+jobs:
+  run-report:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check NY hour gate
+        id: ny_gate
+        shell: bash
+        run: |
+          hour_now="$(TZ=America/New_York date +%H)"
+          if [[ "${hour_now}" == "11" ]]; then
+            echo "run_now=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_now=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Skip if not 11:00 AM New York
+        if: steps.ny_gate.outputs.run_now != 'true' && github.event_name == 'schedule'
+        run: |
+          echo "Skipping scheduled run. Current America/New_York hour is not 11."
+          exit 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run report
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-5' }}
+          BALLDONTLIE_API_KEY: ${{ secrets.BALLDONTLIE_API_KEY }}
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+          ODDS_REGION: ${{ vars.ODDS_REGION || 'us' }}
+          ODDS_BOOKMAKER: ${{ vars.ODDS_BOOKMAKER || 'draftkings' }}
+          ODDSLESS_MODE: ${{ vars.ODDSLESS_MODE || 'true' }}
+          REPORT_OUTPUT_DIR: outputs/reports
+          MIN_CONFIDENCE_SCORE: ${{ vars.MIN_CONFIDENCE_SCORE || '75' }}
+          MAX_PROPS_TO_PROCESS: ${{ vars.MAX_PROPS_TO_PROCESS || '0' }}
+          PROGRESS_EVERY_N_PROPS: ${{ vars.PROGRESS_EVERY_N_PROPS || '25' }}
+          OPENAI_TIMEOUT_SECONDS: ${{ vars.OPENAI_TIMEOUT_SECONDS || '90' }}
+          MAX_PLAYERS_PER_GAME: ${{ vars.MAX_PLAYERS_PER_GAME || '10' }}
+          TELEGRAM_ENABLED: ${{ vars.TELEGRAM_ENABLED || 'true' }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python -m app.main
+
+      - name: Upload report artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nba-props-reports-${{ github.run_id }}
+          path: |
+            outputs/reports/**
+            outputs/logs/**
+          if-no-files-found: ignore
