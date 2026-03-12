@@ -160,7 +160,23 @@ def main() -> None:
 
     if settings.oddsless_mode:
         print("ODDSLESS_MODE is enabled: building model props from BallDontLie only")
-        all_prop_rows = build_oddsless_prop_rows(bdl, today, settings.max_players_per_game)
+        try:
+            all_prop_rows = build_oddsless_prop_rows(bdl, today, settings.max_players_per_game)
+        except Exception as exc:
+            error_message = f"BallDontLie data source error: {type(exc).__name__}: {exc}"
+            print(error_message)
+            report_html_path = storage.save_html(
+                "daily_report_error",
+                build_error_html("NBA Props Report - Data Source Error", error_message),
+            )
+            print(f"Saved html report to: {report_html_path}")
+            if telegram.should_send():
+                try:
+                    telegram.send_report(report_html_path, preview_text=error_message)
+                    print("Telegram delivery: sent")
+                except Exception as send_exc:
+                    print(f"Telegram delivery: failed ({type(send_exc).__name__}: {send_exc})")
+            return
         print(f"Model props generated: {len(all_prop_rows)}")
     else:
         events = odds.get_nba_events()

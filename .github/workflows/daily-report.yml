@@ -60,7 +60,18 @@ jobs:
           TELEGRAM_ENABLED: ${{ vars.TELEGRAM_ENABLED || 'true' }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python -m app.main
+        run: |
+          missing=0
+          for v in OPENAI_API_KEY BALLDONTLIE_API_KEY TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID; do
+            if [[ -z "${!v}" ]]; then
+              echo "Missing required secret/env: ${v}"
+              missing=1
+            fi
+          done
+          if [[ "${missing}" -ne 0 ]]; then
+            exit 1
+          fi
+          python -m app.main
 
       - name: Upload report artifacts
         if: always()
